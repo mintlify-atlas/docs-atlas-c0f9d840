@@ -1,0 +1,57 @@
+---
+title: "NEXUS: AI research platform for academic papers"
+description: "NEXUS ingests papers, enables RAG Q&A with inline citations, generates structured insight reports, and drafts grounded academic sections."
+---
+
+NEXUS is an AI-powered research intelligence platform that lets you upload academic papers, ask questions about them, and generate structured insights or full paper drafts — all grounded in your own document library. It combines a React 18 + Vite frontend with a FastAPI backend, using BAAI/BGE-M3 embeddings and Qdrant for semantic retrieval, and an Ollama-compatible LLM for generation.
+
+## Technology stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 18 + Vite |
+| Backend | FastAPI (Python) |
+| Vector store | Qdrant |
+| Embeddings | BAAI/BGE-M3 |
+| LLM | Ollama-compatible model |
+| Database | SQLite (default) / PostgreSQL (production) |
+| PDF parsing | PyMuPDF + pdfplumber |
+| Document export | python-docx + reportlab |
+
+## Key capabilities
+
+<CardGroup cols={2}>
+  <Card title="Paper ingestion" icon="file-arrow-up" href="/features/paper-ingestion">
+    Upload PDFs and plain-text files. NEXUS chunks, embeds, and indexes them in Qdrant automatically.
+  </Card>
+  <Card title="RAG chat" icon="messages" href="/features/rag-chat">
+    Ask questions across your paper library and receive answers with inline source citations.
+  </Card>
+  <Card title="Research insights" icon="chart-bar" href="/features/insights">
+    Generate structured intelligence reports covering consensus, gaps, contradictions, and trends.
+  </Card>
+  <Card title="Paper writing" icon="pen-nib" href="/features/paper-writing">
+    Draft individual paper sections — abstract, introduction, methodology, and more — then export as DOCX or PDF.
+  </Card>
+</CardGroup>
+
+## How it works
+
+NEXUS processes each uploaded document through a multi-stage pipeline before any question is answered:
+
+1. **Upload** — you submit a PDF or text file via the frontend or the `POST /api/papers/upload` endpoint.
+2. **Chunk** — the backend splits the document into fixed-size chunks (default 512 tokens, 64-token overlap) using word-level splitting (1 token ≈ 0.75 words). Fragments shorter than 50 characters are discarded, and reference sections are skipped entirely.
+3. **Embed** — each chunk is encoded by the BAAI/BGE-M3 sentence-transformer model running locally.
+4. **Index** — chunk vectors and metadata are stored in Qdrant under the configured collection (`nexus_papers` by default).
+5. **Session-scoped RAG** — when you ask a question inside a session, NEXUS retrieves the top-K most similar chunks (default 8) from the papers attached to that session.
+6. **LLM response with citations** — the retrieved chunks are passed to the Ollama-compatible LLM as context, which generates a grounded answer with inline references back to the source documents.
+
+## System requirements
+
+Before installing NEXUS, make sure the following are available on your machine or network:
+
+- **Python 3.11+** — required to run the FastAPI backend
+- **Node.js 18+** — required to build and run the Vite frontend
+- **Docker & Docker Compose** — used for the recommended deployment method
+- **Ollama server** — provides the local LLM inference endpoint; pull a model before starting (e.g. `ollama pull llama3.2:3b`)
+- **Qdrant** — the vector database; can be started via Docker or run as a managed service

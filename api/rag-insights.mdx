@@ -1,0 +1,139 @@
+---
+title: "RAG query and insights API endpoints"
+description: "Stream RAG-powered answers with source citations via POST /query, and generate structured research intelligence reports via GET /insights."
+---
+
+NEXUS uses retrieval-augmented generation (RAG) to answer questions grounded in the papers scoped to a session. Relevant chunks are retrieved from Qdrant using `BAAI/bge-m3` embeddings (top 8 by default), then passed to the configured Ollama model (`llama3.2:3b` by default) to generate a response. Research insights produce a structured analysis across all session papers.
+
+---
+
+## POST /api/sessions/{session_id}/query
+
+Submit a question and receive a streaming, citation-backed answer using Server-Sent Events (SSE). The query is matched against the session's paper vectors and the response is generated token-by-token.
+
+**Path parameter**
+
+| Parameter | Description |
+|---|---|
+| `session_id` | UUID of the session to query |
+
+**Request body**
+
+```json
+{
+  "query": "What are the research gaps in this field?",
+  "history": [
+    {"role": "user", "content": "Summarize the papers"},
+    {"role": "assistant", "content": "The papers cover..."}
+  ]
+}
+```
+
+<ParamField body="query" type="string" required>
+  The question to ask against the session's paper library.
+</ParamField>
+
+<ParamField body="history" type="array">
+  Recent chat turns to include as context. Each entry must have `role` (`user` or `assistant`) and `content` (string). Defaults to an empty list.
+</ParamField>
+
+**Response:** `text/event-stream`
+
+The endpoint streams four event types in sequence:
+
+```
+data: {"type": "chunk", "text": "The key findings show..."}
+
+data: {"type": "sources", "sources": [{"label": "[1]", "paper_id": "...", "title": "...", "page": 3, "score": 0.92}]}
+
+data: {"type": "confidence", "score": 87.5}
+
+data: {"type": "done"}
+```
+
+| Event type | Description |
+|---|---|
+| `chunk` | A fragment of the generated answer. Concatenate all `chunk` texts to reconstruct the full response. |
+| `sources` | Retrieved source citations with paper title, page number, and Qdrant relevance score. Sent once after all chunks. |
+| `confidence` | Overall confidence score (0–100) for the answer. Sent after sources. |
+| `done` | Signals that the stream is complete and the assistant message has been saved to the database. |
+
+```bash
+curl -X POST http://localhost:8000/api/sessions/SESSION_ID/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What are the key findings?", "history": []}' \
+  --no-buffer
+```
+
+<Note>
+  The user message is automatically saved to the session before streaming begins. The full assistant response is saved to the database after the `done` event is emitted.
+</Note>
+
+---
+
+## GET /api/sessions/{session_id}/insights
+
+Generate a structured research intelligence report synthesized from all papers in the session. This endpoint performs multiple RAG queries internally and returns a single JSON object with five analytical dimensions.
+
+**Path parameter**
+
+| Parameter | Description |
+|---|---|
+| `session_id` | UUID of the session |
+
+```bash
+curl http://localhost:8000/api/sessions/SESSION_ID/insights
+```
+
+**Response 200**
+
+```json
+{
+  "consensus": ["Point 1", "Point 2", "Point 3"],
+  "gaps": ["Gap 1", "Gap 2"],
+  "contradictions": ["Contradiction 1"],
+  "trends": ["Trend 1", "Trend 2"],
+  "key_themes": ["theme1", "theme2", "theme3", "theme4", "theme5"],
+  "confidence_scores": {
+    "factual_accuracy": 0.82,
+    "source_diversity": 0.75,
+    "temporal_coverage": 0.60,
+    "consensus_level": 0.88,
+    "methodological_rigor": 0.71
+  }
+}
+```
+
+<ResponseField name="consensus" type="array of strings">
+  Points of agreement across the session's papers.
+</ResponseField>
+
+<ResponseField name="gaps" type="array of strings">
+  Research gaps and unanswered questions identified in the literature.
+</ResponseField>
+
+<ResponseField name="contradictions" type="array of strings">
+  Conflicting claims or findings found across papers.
+</ResponseField>
+
+<ResponseField name="trends" type="array of strings">
+  Emerging patterns and directional shifts in the field.
+</ResponseField>
+
+<ResponseField name="key_themes" type="array of strings">
+  Most prominent topics across the session's paper library.
+</ResponseField>
+
+<ResponseField name="confidence_scores" type="object">
+  Five sub-scores (0.0–1.0) rating the quality of the generated insight report across different dimensions: `factual_accuracy`, `source_diversity`, `temporal_coverage`, `consensus_level`, and `methodological_rigor`.
+</ResponseField>
+
+**Response 400**
+
+```json
+{"detail": "No papers in session"}
+```
+
+Returned when the session exists but has no papers assigned to it.
+
+**Response 404** — session not found.

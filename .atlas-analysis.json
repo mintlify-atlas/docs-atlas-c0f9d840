@@ -1,0 +1,98 @@
+{
+  "projectType": "saas",
+  "projectName": "NEXUS",
+  "projectDescription": "An AI-powered research intelligence platform that ingests academic papers, enables RAG-based Q&A with source citations, generates synthesis reports, and drafts grounded academic paper sections.",
+  "theme": "luma",
+  "primaryColor": "#a855f7",
+  "lightColor": "#c084fc",
+  "darkColor": "#6b21a8",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "deployment"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/paper-ingestion",
+              "features/rag-chat",
+              "features/insights",
+              "features/paper-writing"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment",
+              "configuration/llm-setup",
+              "configuration/vector-store"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/production",
+              "operations/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/papers",
+              "api/sessions",
+              "api/rag-insights",
+              "api/writing-export"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "PDF and TXT paper ingestion with automated chunking and background indexing",
+    "Retrieval-augmented question answering with inline source citations",
+    "Research intelligence reports: consensus, gaps, contradictions, and trends",
+    "AI-assisted paper section drafting grounded in the uploaded library",
+    "Session-scoped paper libraries with persistent chat history",
+    "Export completed papers as DOCX or PDF",
+    "Streaming SSE-based chat responses with confidence scoring",
+    "Docker Compose deployment with Qdrant vector store"
+  ],
+  "publicApiSurface": [
+    "POST /api/papers/upload",
+    "GET /api/papers",
+    "GET /api/papers/{paper_id}",
+    "DELETE /api/papers/{paper_id}",
+    "POST /api/sessions",
+    "GET /api/sessions",
+    "GET /api/sessions/{session_id}",
+    "DELETE /api/sessions/{session_id}",
+    "PUT /api/sessions/{session_id}/papers",
+    "POST /api/sessions/{session_id}/query",
+    "GET /api/sessions/{session_id}/insights",
+    "POST /api/sessions/{session_id}/draft",
+    "GET /api/sessions/{session_id}/sections",
+    "PUT /api/sessions/{session_id}/sections/{type}",
+    "GET /api/sessions/{session_id}/export/{fmt}",
+    "GET /health"
+  ]
+}

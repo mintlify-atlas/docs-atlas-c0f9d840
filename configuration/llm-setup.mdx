@@ -1,0 +1,97 @@
+---
+title: "Configuring your LLM for NEXUS"
+description: "Connect NEXUS to a local Ollama server or any OpenAI-compatible LLM endpoint. Choose and pull the right model for research analysis tasks."
+---
+
+NEXUS uses the [OpenAI Python client](https://github.com/openai/openai-python) pointed at your configured `OLLAMA_URL`. Because Ollama exposes an OpenAI-compatible API at `/v1`, no additional adapter is needed — and any other provider that implements the OpenAI chat completions spec works the same way.
+
+## Setup
+
+<Tabs>
+  <Tab title="Ollama (local)">
+    1. Install Ollama from [https://ollama.ai](https://ollama.ai).
+
+    2. Pull a model:
+
+    ```bash
+    ollama pull llama3.2:3b
+    ```
+
+    3. Verify Ollama is running:
+
+    ```bash
+    curl http://localhost:11434/api/tags
+    ```
+
+    4. Set the following variables in `backend/.env`:
+
+    ```env backend/.env
+    OLLAMA_URL=http://localhost:11434
+    OLLAMA_MODEL=llama3.2:3b
+    ```
+
+    NEXUS calls the `/v1/chat/completions` endpoint via the OpenAI client. Ollama
+    exposes this at `{OLLAMA_URL}/v1`, which the backend constructs automatically
+    from your `OLLAMA_URL` value (see `backend/services/rag.py:36`).
+  </Tab>
+  <Tab title="OpenAI-compatible API">
+    Any provider that implements the OpenAI chat completions API can be used as
+    a drop-in replacement for Ollama. Point `OLLAMA_URL` at your provider's base
+    URL and set `OLLAMA_MODEL` to the model identifier your provider expects:
+
+    ```env backend/.env
+    OLLAMA_URL=https://api.your-provider.com
+    OLLAMA_MODEL=your-model-name
+    ```
+
+    <Note>
+      The `api_key` is hardcoded to `"ollama"` in `backend/services/rag.py:37`.
+      If your provider requires a real API key, update that value in
+      `get_ollama_client()`.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Model recommendations
+
+| Model | Best for |
+|---|---|
+| `llama3.2:3b` | Fast iteration and development — low memory footprint |
+| `llama3.1:8b` | Better reasoning; recommended for production research workloads |
+| `mistral:7b` | Strong structured output — well-suited for insights JSON generation |
+
+Any model that supports the `/v1/chat/completions` API with a `system` message field is compatible with NEXUS.
+
+## How NEXUS uses the LLM
+
+NEXUS makes three distinct types of LLM calls, each with different output requirements:
+
+1. **RAG Q&A** — Streaming chat with a grounded system prompt built from retrieved paper chunks. The LLM receives up to `TOP_K_RETRIEVAL` source passages and is instructed to cite them inline. Output is streamed token-by-token with a `max_tokens` limit of `2048`.
+
+2. **Insights generation** — A single non-streaming call requesting a structured JSON object with fields for consensus points, research gaps, contradictions, temporal trends, key themes, and confidence scores. `max_tokens` is set to `1500`. The model must be capable of producing valid JSON reliably.
+
+3. **Paper section drafting** — A non-streaming call that writes a full academic section (abstract, introduction, methodology, etc.) grounded in retrieved literature. Each section call uses up to `2000` tokens of output.
+
+<Tip>
+  If you have the infrastructure, consider routing paper-writing and insights
+  requests to a larger, more capable model (e.g. `llama3.1:8b` or
+  `mistral:7b`) while using a smaller model like `llama3.2:3b` for interactive
+  RAG queries where response speed matters more.
+</Tip>
+
+## Health check
+
+After starting the backend, confirm LLM connectivity with:
+
+```bash
+curl http://localhost:8000/health
+```
+
+A successful response includes the configured model name:
+
+```json
+{
+  "status": "ok",
+  "model": "llama3.2:3b"
+}
+```

@@ -1,0 +1,147 @@
+---
+title: "Deploy NEXUS with Docker Compose"
+description: "Deploy NEXUS using Docker Compose for the complete stack, or run the backend and frontend separately for faster local development iteration."
+---
+
+NEXUS ships with a Docker Compose configuration that starts Qdrant, the FastAPI backend, and the Vite frontend in a single command. For active development you can also run each service separately, which gives you faster iteration cycles and direct access to logs.
+
+<Tabs>
+  <Tab title="Docker Compose">
+    Docker Compose is the recommended way to run NEXUS. It manages service dependencies, shared volumes, and networking automatically.
+
+    ## docker-compose.yml
+
+    ```yaml
+    services:
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - "6333:6333"
+        volumes:
+          - qdrant_data:/qdrant/storage
+        restart: unless-stopped
+
+      backend:
+        build: ./backend
+        ports:
+          - "8000:8000"
+        env_file: ./backend/.env
+        volumes:
+          - ./backend:/app
+          - uploads:/app/uploads
+        depends_on:
+          - qdrant
+        command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+        restart: unless-stopped
+
+      frontend:
+        build: ./frontend
+        ports:
+          - "5173:5173"
+        depends_on:
+          - backend
+        environment:
+          - VITE_API_URL=http://localhost:8000/api
+        command: npm run dev -- --host
+        restart: unless-stopped
+
+    volumes:
+      qdrant_data:
+      uploads:
+    ```
+
+    ## Services
+
+    | Service | Port | Description |
+    |---|---|---|
+    | `qdrant` | 6333 | Qdrant vector database. Uses the `qdrant_data` named volume so indexed vectors survive restarts. |
+    | `backend` | 8000 | FastAPI application. Mounts `./backend` into the container for hot-reload, and `uploads` for persistent file storage. Reads environment from `./backend/.env`. |
+    | `frontend` | 5173 | Vite development server. Receives the backend URL via `VITE_API_URL`. |
+
+    ## Start the stack
+
+    ```bash
+    docker compose up --build
+    ```
+
+    ## Stop the stack
+
+    ```bash
+    docker compose down
+    ```
+
+    ## Persistent volumes
+
+    | Volume | Mount path | Purpose |
+    |---|---|---|
+    | `qdrant_data` | `/qdrant/storage` | Stores Qdrant collections and indexed vectors |
+    | `uploads` | `/app/uploads` | Stores uploaded PDF files processed by the backend |
+
+    Both volumes are preserved when you run `docker compose down`. To remove them, add the `-v` flag: `docker compose down -v`.
+  </Tab>
+
+  <Tab title="Local development">
+    Running services individually avoids Docker image rebuilds and gives you direct access to logs and debuggers.
+
+    ## Backend
+
+    Start Qdrant first (required by the backend):
+
+    ```bash
+    docker run -p 6333:6333 qdrant/qdrant
+    ```
+
+    Then set up and start the FastAPI backend:
+
+    ```bash
+    cd backend
+    python -m venv .venv
+    source .venv/bin/activate  # Linux/Mac
+    # .\.venv\Scripts\Activate.ps1  # Windows
+    pip install -r requirements.txt
+    uvicorn main:app --reload --port 8000
+    ```
+
+    Make sure `backend/.env` exists with the correct values before running uvicorn. See [Get started with NEXUS](/quickstart) for the full `.env` template.
+
+    ## Frontend
+
+    In a separate terminal:
+
+    ```bash
+    cd frontend
+    npm install
+    npm run dev -- --host
+    ```
+
+    The `--host` flag exposes the dev server on your local network, matching the Docker Compose behaviour.
+  </Tab>
+</Tabs>
+
+## Service URLs
+
+Once the stack is running, the following endpoints are available:
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:5173 |
+| Backend API | http://localhost:8000 |
+| API docs (Swagger) | http://localhost:8000/docs |
+| Health check | http://localhost:8000/health |
+| Qdrant dashboard | http://localhost:6333/dashboard |
+
+## Port mapping
+
+| Host port | Container port | Service |
+|---|---|---|
+| 5173 | 5173 | Vite frontend dev server |
+| 8000 | 8000 | FastAPI backend |
+| 6333 | 6333 | Qdrant HTTP API and dashboard |
+
+<Warning>
+  The default `DATABASE_URL` uses SQLite (`sqlite+aiosqlite:///./nexus.db`), which is not suitable for production. SQLite does not support concurrent writes and will cause errors under multi-user load. For production deployments, set `DATABASE_URL` to a PostgreSQL connection string, for example:
+
+  ```env
+  DATABASE_URL=postgresql+asyncpg://user:password@db-host:5432/nexus
+  ```
+</Warning>

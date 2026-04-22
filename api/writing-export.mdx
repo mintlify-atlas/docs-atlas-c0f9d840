@@ -1,0 +1,185 @@
+---
+title: "Paper writing and export API endpoints"
+description: "Draft academic paper sections with AI via POST /draft, retrieve and save sections via GET and PUT /sections, and export the full paper via GET /export."
+---
+
+The writing and export API turns a research session into a complete academic paper. Use the draft endpoint to generate individual sections with AI assistance grounded in the session's papers, edit content with the sections endpoints, and download the finished paper as a DOCX or PDF file.
+
+---
+
+## POST /api/sessions/{session_id}/draft
+
+Generate a draft for a specific paper section using the session's paper library. Existing sections are passed as context so the generated content remains coherent across the full paper. The drafted content is automatically saved.
+
+**Path parameter**
+
+| Parameter | Description |
+|---|---|
+| `session_id` | UUID of the session |
+
+**Request body**
+
+```json
+{
+  "section_type": "introduction",
+  "paper_title": "My Research Paper"
+}
+```
+
+<ParamField body="section_type" type="string" required>
+  The section to generate. Must be one of: `abstract`, `introduction`, `related_work`, `methodology`, `results`, `discussion`, `conclusion`, `references`.
+</ParamField>
+
+<ParamField body="paper_title" type="string">
+  The title of the paper being written. Used to frame the generated content. Defaults to an empty string.
+</ParamField>
+
+**Response 200**
+
+```json
+{
+  "content": "## Introduction\n\nThis paper investigates...",
+  "word_count": 742
+}
+```
+
+<ResponseField name="content" type="string">
+  The full generated section text in Markdown format.
+</ResponseField>
+
+<ResponseField name="word_count" type="integer">
+  Word count of the generated content.
+</ResponseField>
+
+<Note>
+  The drafted content is automatically saved as a section on the session. Use `PUT /api/sessions/{session_id}/sections/{section_type}` to overwrite it with edited content.
+</Note>
+
+---
+
+## GET /api/sessions/{session_id}/sections
+
+Retrieve all saved paper sections for a session, keyed by section type.
+
+**Path parameter**
+
+| Parameter | Description |
+|---|---|
+| `session_id` | UUID of the session |
+
+```bash
+curl http://localhost:8000/api/sessions/SESSION_ID/sections
+```
+
+**Response 200**
+
+```json
+{
+  "sections": {
+    "abstract": {
+      "content": "This paper presents...",
+      "word_count": 180,
+      "is_done": true
+    },
+    "introduction": {
+      "content": "Research into...",
+      "word_count": 750,
+      "is_done": true
+    }
+  }
+}
+```
+
+<ResponseField name="sections" type="object">
+  A map from section type name to section data. Only sections that have been drafted or saved are included — missing keys mean that section has not been started.
+</ResponseField>
+
+<ResponseField name="sections[].content" type="string">
+  Current saved text for the section.
+</ResponseField>
+
+<ResponseField name="sections[].word_count" type="integer">
+  Word count of the saved content.
+</ResponseField>
+
+<ResponseField name="sections[].is_done" type="boolean">
+  `true` when `word_count > 10`. Used by the UI to mark sections as complete.
+</ResponseField>
+
+---
+
+## PUT /api/sessions/{session_id}/sections/{section_type}
+
+Save or update a paper section with new content. Creates the section record if it does not yet exist, or overwrites the existing content.
+
+**Path parameters**
+
+| Parameter | Description |
+|---|---|
+| `session_id` | UUID of the session |
+| `section_type` | Section name (e.g. `introduction`, `conclusion`) |
+
+**Request body**
+
+```json
+{
+  "content": "Updated section text..."
+}
+```
+
+<ParamField body="content" type="string" required>
+  The full text to save for this section. Replaces any previously stored content.
+</ParamField>
+
+**Response 200**
+
+```json
+{
+  "saved": true,
+  "word_count": 215
+}
+```
+
+<Note>
+  `is_done` is set to `true` automatically when the saved `word_count` exceeds 10 words.
+</Note>
+
+---
+
+## GET /api/sessions/{session_id}/export/{fmt}
+
+Export the complete paper — all saved sections combined — as a downloadable file.
+
+**Path parameters**
+
+| Parameter | Description |
+|---|---|
+| `session_id` | UUID of the session |
+| `fmt` | Export format: `docx` or `pdf` |
+
+**Response:** binary file download
+
+| Format | Content-Type |
+|---|---|
+| `docx` | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` |
+| `pdf` | `application/pdf` |
+
+The `Content-Disposition` header is set to `attachment; filename="Paper_Title.docx"` (or `.pdf`), where the filename is derived from the session title.
+
+```bash
+# Download as DOCX
+curl http://localhost:8000/api/sessions/SESSION_ID/export/docx -o paper.docx
+
+# Download as PDF
+curl http://localhost:8000/api/sessions/SESSION_ID/export/pdf -o paper.pdf
+```
+
+**Response 400**
+
+```json
+{"detail": "Format must be docx or pdf"}
+```
+
+Returned when `fmt` is anything other than `docx` or `pdf`.
+
+**Response 404** — session not found.

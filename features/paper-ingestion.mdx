@@ -1,0 +1,102 @@
+---
+title: "Ingesting papers into NEXUS"
+description: "Upload PDF and TXT research papers to NEXUS for automatic chunking, embedding, and vector indexing. Track ingestion status from queued to indexed."
+---
+
+NEXUS processes research papers through a fully automated ingestion pipeline. Once you upload a file, a background task parses the document, splits it into overlapping text chunks, embeds each chunk with a dense vector model, and stores the results in Qdrant—making the paper immediately searchable for RAG chat, insights, and AI-assisted writing.
+
+## Supported formats
+
+NEXUS accepts two file types:
+
+- **PDF** — parsed with PyMuPDF (`fitz`) for text extraction and pdfplumber for table content. Metadata (title, authors, abstract, year) is heuristically extracted from the first two pages.
+- **TXT** — plain-text files processed through the same chunking and embedding pipeline.
+
+Image-only or encrypted PDFs that yield no extractable text will transition to a `failed` status with a descriptive error message.
+
+## Ingestion pipeline
+
+<Steps>
+  <Step title="Upload">
+    Open the upload modal by clicking **⊕ Ingest** in the header, or **⊕ Add Papers** in the Library tab. Drag and drop files onto the modal or click **browse** to open a file picker. Multiple files can be staged at once. Clicking **Start Indexing** sends all staged files to `POST /api/papers/upload`.
+  </Step>
+  <Step title="Storage">
+    Each file is saved to the server's `uploads` directory with a UUID prefix (e.g., `3f2a1b…_paper.pdf`). The paper record is written to the database immediately with `status: queued`.
+  </Step>
+  <Step title="Background indexing">
+    A FastAPI `BackgroundTask` picks up the file and calls `run_ingestion`. The parser splits each page's text into overlapping chunks using configurable settings:
+
+    - `MAX_CHUNK_SIZE`: default **512 tokens** (≈384 words)
+    - `CHUNK_OVERLAP`: default **64 tokens** (≈48 words)
+
+    Chunks shorter than 50 characters are discarded. The reference section is skipped entirely—citation lists add noise without semantic value for retrieval.
+  </Step>
+  <Step title="Embedding">
+    Each text chunk is embedded using **BAAI/BGE-M3**, a 1024-dimensional multilingual model loaded as a singleton via `sentence-transformers`. Chunks are processed in batches of 32 (`batch_size=32`) with L2-normalized embeddings. At query time, the query string is prepended with a retrieval instruction (`Represent this sentence for searching relevant passages: …`) before embedding to improve recall quality.
+  </Step>
+  <Step title="Vector indexing">
+    Chunk embeddings are upserted to Qdrant in batches of 100. Each point stores the full payload required for RAG attribution:
+
+    | Field | Description |
+    |---|---|
+    | `paper_id` | UUID of the parent paper |
+    | `title` | Paper title |
+    | `authors` | Author string |
+    | `year` | Publication year |
+    | `page` | 1-based page number |
+    | `section` | Detected section (abstract, introduction, methodology, etc.) |
+    | `text` | Raw chunk text |
+    | `chunk_index` | Ordinal position within the paper |
+  </Step>
+  <Step title="Status update">
+    After all chunks are upserted, the paper record is updated to `status: indexed` with extracted metadata. If any step raises an exception, the status transitions to `failed` and the error message is stored for display in the Library tab.
+  </Step>
+</Steps>
+
+## Paper status indicators
+
+Each paper in your library displays a colored status badge:
+
+| Status | Color | Meaning |
+|---|---|---|
+| `queued` | Amber | File uploaded; waiting for the background worker to begin |
+| `processing` | Purple | Parsing, embedding, and indexing in progress |
+| `indexed` | Green | All chunks stored in Qdrant; paper is searchable |
+| `failed` | Pink | Ingestion error; see the error message on the paper card |
+
+## Extracted metadata
+
+When ingestion completes, NEXUS updates the paper record with metadata heuristically extracted from the first two pages of the document:
+
+- **title** — first substantial non-URL line (more than 15 characters) from the first 10 lines; falls back to the filename stem
+- **authors** — line between the title and abstract that contains commas or the word "and", shorter than 200 characters, and not matching university/department/abstract patterns
+- **year** — first four-digit year matching `19xx` or `20xx` found anywhere in the first two pages
+- **abstract** — text between the "Abstract" heading and the next section header (up to 1,200 characters)
+- **pages** — total page count
+- **total_chunks** — number of chunks stored in Qdrant
+
+<Note>
+The `journal` field exists in the database and is returned by the API, but it is not populated by the ingestion pipeline. It defaults to an empty string unless set manually.
+</Note>
+
+## Managing your paper library
+
+The **⬡ Library** tab shows all uploaded papers as searchable cards. Use the search bar to filter by title or author name.
+
+Each card displays the paper's status, authors, year, abstract excerpt, page count, and chunk count. From a paper card you can:
+
+- **Summarize** — jump to Chat with a pre-filled prompt asking NEXUS to summarize that paper
+- **Delete** — remove the paper from the library
+
+<Note>
+Deleting a paper removes both the uploaded file from disk and all of its vector chunks from Qdrant. This action cannot be undone.
+</Note>
+
+## Polling and notifications
+
+While papers are in `queued` or `processing` states, the UI polls `GET /api/papers` every **3 seconds**. When a paper transitions to `indexed` or `failed`, a toast notification appears in the bottom-right corner:
+
+- `✓ "Paper Title" indexed` — green toast on success
+- `✗ "Paper Title" failed` — red toast on failure
+
+Polling stops automatically once no papers remain in an in-progress state.

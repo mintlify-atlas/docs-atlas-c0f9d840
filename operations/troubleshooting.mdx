@@ -1,0 +1,178 @@
+---
+title: "Troubleshooting common NEXUS issues"
+description: "Solutions for common problems in NEXUS: backend offline errors, failed paper ingestion, LLM connectivity issues, and vector store problems."
+---
+
+Most NEXUS problems fall into one of four categories: the backend process is not running, a paper failed to ingest, the LLM endpoint is unreachable, or the vector store is unavailable. The sections below cover each symptom with its likely cause and the fastest fix.
+
+<AccordionGroup>
+  <Accordion title="Backend offline — start uvicorn">
+    **Symptom:** A toast notification reading "Backend offline — start uvicorn" appears when the frontend loads.
+
+    **Cause:** The FastAPI backend is not running, or the frontend cannot reach it at the URL configured in `VITE_API_URL`.
+
+    **Fix:**
+
+    With Docker Compose:
+
+    ```bash
+    docker compose up backend
+    ```
+
+    Running locally:
+
+    ```bash
+    cd backend && uvicorn main:app --reload --port 8000
+    ```
+
+    Verify the backend is reachable:
+
+    ```bash
+    curl http://localhost:8000/health
+    # {"status": "ok", "model": "llama3.2:3b"}
+    ```
+  </Accordion>
+
+  <Accordion title="Paper stuck in 'queued' or 'processing' status">
+    **Symptom:** After uploading a paper, its status stays at "queued" or "processing" indefinitely and never transitions to "indexed".
+
+    **Cause:** The background ingestion task failed silently, or Qdrant or the embedding service is unavailable.
+
+    **Fix:**
+
+    Check backend logs for errors:
+
+    ```bash
+    docker compose logs backend
+    ```
+
+    Verify Qdrant is running:
+
+    ```bash
+    curl http://localhost:6333/health
+    ```
+
+    Check that the BAAI/BGE-M3 embedding model has finished downloading. On first run, `sentence-transformers` downloads the model automatically — this can take several minutes depending on your connection.
+
+    Retrieve the paper's `error_message` field directly from the API to see what the ingestion pipeline reported:
+
+    ```bash
+    curl http://localhost:8000/api/papers/{paper_id}
+    ```
+  </Accordion>
+
+  <Accordion title="Paper ingestion fails with an error">
+    **Symptom:** The paper status shows "failed" with an error message in the Library tab.
+
+    **Causes and fixes:**
+
+    - **Unsupported file format** — only `.pdf` and `.txt` files are supported by the ingestion pipeline. Confirm the file extension before uploading.
+    - **Corrupt or image-only PDF** — if the PDF contains no extractable text (e.g., a scanned document without OCR), the parser returns zero chunks and ingestion fails with `"No text chunks extracted — PDF may be image-only or encrypted."` Try re-exporting the PDF from its source application, or convert it to `.txt` first.
+    - **Out of memory** — embedding large PDFs is CPU- and RAM-intensive. Try reducing `MAX_CHUNK_SIZE` in `backend/.env` to split the document into smaller pieces:
+
+    ```env
+    MAX_CHUNK_SIZE=256
+    ```
+  </Accordion>
+
+  <Accordion title="RAG query returns 'No relevant content found'">
+    **Symptom:** NEXUS responds with "No relevant content found in your library for this query."
+
+    **Cause:** There are no indexed papers associated with the current session, or none of the indexed chunks match the query embedding closely enough.
+
+    **Fix:**
+
+    - Open the Library tab and confirm that at least one paper shows status "indexed". Papers in "queued", "processing", or "failed" states are not searchable.
+    - Check the session sidebar — it shows the number of papers assigned to the active session. If the count is zero, use the Library tab to add papers to the session.
+    - Rephrase your query using more specific terminology from the paper content. The retrieval step uses semantic similarity, so queries that mirror the language of the source material perform better.
+  </Accordion>
+
+  <Accordion title="LLM error in chat response">
+    **Symptom:** The chat response contains `⚠️ LLM error: ...` followed by an exception message.
+
+    **Cause:** Ollama is not running, the configured model has not been pulled, or `OLLAMA_URL` points to the wrong host.
+
+    **Fix:**
+
+    Check that Ollama is running and list available models:
+
+    ```bash
+    curl http://localhost:11434/api/tags
+    ```
+
+    Pull the model if it is missing:
+
+    ```bash
+    ollama pull llama3.2:3b
+    ```
+
+    Verify `OLLAMA_URL` and `OLLAMA_MODEL` in `backend/.env` match your Ollama setup, then restart the backend to pick up the changes:
+
+    ```bash
+    docker compose restart backend
+    ```
+  </Accordion>
+
+  <Accordion title="Insights tab shows no results or errors">
+    **Symptom:** The Insights tab is empty, shows a spinner indefinitely, or displays a JSON error.
+
+    **Cause:** The session has no indexed papers, or the LLM returned a response that could not be parsed as JSON.
+
+    **Fix:**
+
+    - Switch to a session that contains at least one indexed paper before opening the Insights tab. The `generate_insights` function returns `{"error": "No papers in session"}` immediately if the paper list is empty.
+    - If NEXUS returns `{"raw": "...", "error": "Could not parse structured response"}`, the LLM did not produce valid JSON. Try switching to a larger or instruction-tuned model that handles structured output more reliably:
+
+    ```env
+    OLLAMA_MODEL=llama3.1:8b
+    ```
+
+    Restart the backend after changing `OLLAMA_MODEL`.
+  </Accordion>
+
+  <Accordion title="CORS errors in the browser console">
+    **Symptom:** The browser developer console shows CORS errors such as `Access to fetch at 'http://localhost:8000/api/...' from origin '...' has been blocked`.
+
+    **Cause:** The frontend's origin is not included in the `CORS_ORIGINS` list that the backend passes to `CORSMiddleware`.
+
+    **Fix:**
+
+    Add your frontend URL to `CORS_ORIGINS` in `backend/.env`, then restart the backend:
+
+    ```env
+    CORS_ORIGINS=http://localhost:5173,http://localhost:3000,https://your-domain.com
+    ```
+
+    ```bash
+    docker compose restart backend
+    ```
+  </Accordion>
+
+  <Accordion title="Docker Compose: port already in use">
+    **Symptom:** `docker compose up` fails with an error such as `Error response from daemon: Ports are not available: address already in use`.
+
+    **Cause:** Another process on the host is already bound to one of the ports NEXUS uses.
+
+    Default port assignments from `docker-compose.yml`:
+
+    | Service  | Port |
+    |----------|------|
+    | Qdrant   | 6333 |
+    | Backend  | 8000 |
+    | Frontend | 5173 |
+
+    **Fix:**
+
+    Find and stop the conflicting process, or change the host-side port mapping in `docker-compose.yml`. For example, to move the backend to port 8001:
+
+    ```yaml
+    backend:
+      ports:
+        - "8001:8000"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  Stream backend logs in real time with `docker compose logs -f backend`. This is the fastest way to see ingestion errors, LLM exceptions, and startup failures as they happen.
+</Note>

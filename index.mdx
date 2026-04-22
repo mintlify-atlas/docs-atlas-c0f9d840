@@ -1,97 +1,61 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "NEXUS: AI Research Intelligence Platform"
+description: "NEXUS ingests academic papers, answers questions with source citations, synthesizes research insights, and drafts paper sections grounded in your library."
 ---
 
-## Setting up
+NEXUS is an AI-powered research intelligence platform that transforms how you work with academic literature. Upload PDF or TXT papers, ask questions backed by exact citations, generate synthesis reports across your entire library, and draft complete paper sections — all from a single interface.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get NEXUS running and ingest your first paper in under 5 minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Deployment" icon="server" href="/deployment">
+    Deploy with Docker Compose or run the backend and frontend locally.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Explore every endpoint: papers, sessions, RAG queries, and exports.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Core Features" icon="sparkles" href="/features/paper-ingestion">
+    Learn about ingestion, RAG chat, insights reports, and paper writing.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What NEXUS does
 
-Everything you need to create world-class documentation.
+NEXUS combines a React frontend with a FastAPI backend, Qdrant vector store, and a local Ollama-compatible LLM to give you a complete research workflow:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="Paper ingestion" icon="file-pdf" href="/features/paper-ingestion">
+    Upload PDFs and TXT files. NEXUS chunks, embeds, and indexes them automatically in the background.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="RAG chat" icon="message-bot" href="/features/rag-chat">
+    Ask questions about your papers. Every answer cites exact sources with page numbers and confidence scores.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Research insights" icon="chart-network" href="/features/insights">
+    Generate structured reports covering consensus findings, research gaps, contradictions, and temporal trends.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="Paper writing" icon="pen-nib" href="/features/paper-writing">
+    Draft full paper sections — abstract through references — grounded in your library and export as DOCX or PDF.
   </Card>
-</Columns>
+</CardGroup>
 
-## Need inspiration?
+## Getting started
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Steps>
+  <Step title="Start the stack">
+    Run `docker compose up --build` to start the backend, frontend, and Qdrant vector store together.
+  </Step>
+  <Step title="Upload papers">
+    Open `http://localhost:5173`, click **⊕ Ingest**, and drop your PDF or TXT files. NEXUS indexes them in the background.
+  </Step>
+  <Step title="Create a session">
+    Click **⊕ New Session** in the sidebar, give it a name, and NEXUS will automatically include all indexed papers.
+  </Step>
+  <Step title="Ask, synthesize, write">
+    Use the **Chat** tab to ask questions with citations, the **Insights** tab to synthesize across papers, and the **Write** tab to draft your paper sections.
+  </Step>
+</Steps>
+
+<Note>
+  NEXUS requires a running Ollama instance (or compatible OpenAI-style endpoint) and Qdrant. See the [deployment guide](/deployment) and [LLM setup](/configuration/llm-setup) for details.
+</Note>

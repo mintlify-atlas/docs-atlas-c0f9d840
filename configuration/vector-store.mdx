@@ -1,0 +1,127 @@
+---
+title: "Qdrant vector store setup for NEXUS"
+description: "Configure and manage the Qdrant vector database used by NEXUS to store and search paper chunk embeddings with semantic similarity."
+---
+
+NEXUS uses [Qdrant](https://qdrant.tech) as its vector database. When a paper is ingested, its text is split into chunks, each chunk is embedded using BGE-M3, and the resulting vectors are upserted into Qdrant alongside metadata. At query time, NEXUS embeds the user's question and retrieves the most semantically similar chunks via cosine similarity search — scoped to the papers in the active session.
+
+## Running Qdrant
+
+<Tabs>
+  <Tab title="Docker Compose (recommended)">
+    Qdrant is included in the project's `docker-compose.yml`. No extra setup is
+    required — it starts automatically alongside the backend and frontend:
+
+    ```bash
+    docker compose up --build
+    ```
+
+    The Qdrant service configuration from `docker-compose.yml`:
+
+    ```yaml docker-compose.yml
+    services:
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - "6333:6333"
+        volumes:
+          - qdrant_data:/qdrant/storage
+        restart: unless-stopped
+
+    volumes:
+      qdrant_data:
+    ```
+
+    Vector data persists across restarts in the `qdrant_data` Docker volume.
+  </Tab>
+  <Tab title="Docker standalone">
+    Run Qdrant as a standalone container with a named volume for persistence:
+
+    ```bash
+    docker run -p 6333:6333 -v qdrant_storage:/qdrant/storage qdrant/qdrant
+    ```
+
+    Then set `QDRANT_URL=http://localhost:6333` in `backend/.env`.
+  </Tab>
+  <Tab title="Managed Qdrant Cloud">
+    1. Sign up at [https://cloud.qdrant.io](https://cloud.qdrant.io).
+    2. Create a cluster and copy your cluster URL and API key.
+    3. Set the cluster URL in `backend/.env`:
+
+    ```env backend/.env
+    QDRANT_URL=https://your-cluster.cloud.qdrant.io
+    ```
+
+    <Note>
+      NEXUS does not currently pass an API key when initializing the Qdrant
+      client (see `backend/services/vector_store.py:36`). If your Qdrant Cloud
+      cluster requires authentication, add the `api_key` parameter to the
+      `QdrantClient` constructor in that file.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Configuration options
+
+<ParamField path="QDRANT_URL" type="string" default="http://localhost:6333">
+  URL of the Qdrant server. Set this to your remote cluster URL when using
+  Qdrant Cloud or a self-hosted instance on another machine.
+</ParamField>
+
+<ParamField path="QDRANT_COLLECTION" type="string" default="nexus_papers">
+  Name of the Qdrant collection where paper chunks are stored. NEXUS creates
+  this collection automatically on first paper upload — no manual setup needed.
+</ParamField>
+
+<ParamField path="EMBEDDING_MODEL" type="string" default="BAAI/bge-m3">
+  HuggingFace model used to generate embeddings. Vectors stored in Qdrant are
+  1024-dimensional, matching BGE-M3's output. This value determines the
+  collection's vector size at creation time.
+
+  **Changing this after papers have been indexed requires re-ingesting all
+  papers** — see the warning below.
+</ParamField>
+
+## Collection schema
+
+Each point stored in Qdrant represents one text chunk from a paper. Points have the following structure:
+
+| Field | Type | Description |
+|---|---|---|
+| `vector` | `float[1024]` | BGE-M3 embedding for the chunk text |
+| `paper_id` | string | UUID of the parent paper |
+| `chunk_index` | integer | Position of the chunk within the paper |
+| `page` | integer | Source page number |
+| `section` | string | Detected section heading (e.g. "Introduction") |
+| `text` | string | Raw chunk text |
+| `title` | string | Paper title |
+| `authors` | string | Paper authors |
+| `year` | integer | Publication year |
+
+Similarity search results are optionally filtered by `paper_id` so that RAG queries stay scoped to the papers in the active research session.
+
+<Warning>
+  Changing `EMBEDDING_MODEL` after papers have already been indexed will break
+  retrieval. The new model will produce vectors of a different distribution (and
+  potentially a different dimension) than the ones stored in Qdrant, causing
+  similarity scores to be meaningless. If you need to switch models, delete the
+  existing collection from the Qdrant dashboard and re-upload all papers to
+  re-ingest them with the new embeddings.
+</Warning>
+
+## Qdrant dashboard
+
+When running locally, the Qdrant web UI is available at:
+
+```
+http://localhost:6333/dashboard
+```
+
+Use the dashboard to inspect collections, browse stored points and their payloads, run manual searches, and monitor cluster health.
+
+<Note>
+  NEXUS creates the `nexus_papers` collection automatically the first time a
+  paper is uploaded. The collection is configured with cosine distance and a
+  vector size matching the `EMBEDDING_MODEL` output dimension (1024 for
+  `BAAI/bge-m3`). You do not need to create it manually.
+</Note>

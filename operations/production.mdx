@@ -1,0 +1,160 @@
+---
+title: "Running NEXUS in production"
+description: "Checklist and best practices for deploying NEXUS to production: database, vector store, LLM, frontend hosting, HTTPS, and multi-user considerations."
+---
+
+Production deployment replaces every default development setting with durable, scalable equivalents: SQLite becomes PostgreSQL, the local Qdrant container gets persistent storage or moves to a managed cluster, Ollama runs on a dedicated server or compatible API endpoint, and the React frontend is compiled to a static bundle served from a CDN. You also need HTTPS termination, correct CORS configuration, and an auth layer before any of this is exposed to the internet.
+
+## Production checklist
+
+<Steps>
+  <Step title="Switch to PostgreSQL">
+    Replace the default `DATABASE_URL` in `backend/.env` with a PostgreSQL connection string. SQLite does not support concurrent writes and will produce locking errors under real workloads.
+
+    ```env
+    DATABASE_URL=postgresql+asyncpg://nexus:yourpassword@db:5432/nexus
+    ```
+
+    Install the required drivers:
+
+    ```bash
+    pip install asyncpg psycopg2-binary
+    ```
+  </Step>
+
+  <Step title="Use a dedicated Qdrant deployment">
+    Run Qdrant with persistent storage (the Docker Compose file already mounts a `qdrant_data` volume) or use [Qdrant Cloud](https://cloud.qdrant.io). Update `QDRANT_URL` in `backend/.env` to point to your deployment.
+
+    ```env
+    QDRANT_URL=https://your-qdrant-cluster.cloud.qdrant.io
+    ```
+  </Step>
+
+  <Step title="Build the frontend">
+    Compile the React app to a static bundle. Do not run `npm run dev` in production.
+
+    ```bash
+    cd frontend
+    npm run build
+    ```
+
+    This outputs a `dist/` folder. Serve it from a CDN or static host — see [Frontend hosting](#frontend-hosting) below.
+  </Step>
+
+  <Step title="Configure CORS">
+    Set `CORS_ORIGINS` to your production frontend domain. The backend (`main.py`) reads this list and passes it to `CORSMiddleware`. Leaving the default `localhost` values will block browser requests from your deployed frontend.
+
+    ```env
+    CORS_ORIGINS=https://your-frontend-domain.com
+    ```
+  </Step>
+
+  <Step title="Enable HTTPS">
+    Place a reverse proxy in front of the FastAPI backend on port 8000. Popular options are nginx, Caddy, and Traefik. The proxy handles TLS termination and forwards requests to `http://backend:8000`.
+  </Step>
+
+  <Step title="Host Ollama on a production server">
+    Run Ollama on a machine with sufficient GPU or CPU resources, or use a compatible OpenAI-style API endpoint. Update `OLLAMA_URL` and `OLLAMA_MODEL` accordingly.
+
+    ```env
+    OLLAMA_URL=https://your-llm-host.com
+    OLLAMA_MODEL=llama3.1:8b
+    ```
+  </Step>
+
+  <Step title="Set up health monitoring">
+    The backend exposes a health endpoint. Wire it to your uptime monitor or load balancer health check.
+
+    ```bash
+    curl http://localhost:8000/health
+    # {"status": "ok", "model": "llama3.1:8b"}
+    ```
+  </Step>
+</Steps>
+
+## Database
+
+| Environment | Driver | Default value |
+|-------------|--------|---------------|
+| Development | `sqlite+aiosqlite` | `sqlite+aiosqlite:///./nexus.db` |
+| Production  | `postgresql+asyncpg` | — (you supply this) |
+
+SQLite is fine for a single developer running NEXUS locally. For any deployment with more than one concurrent user, switch to PostgreSQL.
+
+```env
+DATABASE_URL=postgresql+asyncpg://nexus:yourpassword@db:5432/nexus
+```
+
+Install the async PostgreSQL driver before starting the backend:
+
+```bash
+pip install asyncpg psycopg2-binary
+```
+
+## Production environment variables
+
+A minimal `backend/.env` for a production deployment:
+
+```env
+OLLAMA_URL=https://your-llm-host.com
+OLLAMA_MODEL=llama3.1:8b
+QDRANT_URL=https://your-qdrant-cluster.cloud.qdrant.io
+QDRANT_COLLECTION=nexus_papers
+DATABASE_URL=postgresql+asyncpg://nexus:yourpassword@db:5432/nexus
+CORS_ORIGINS=https://your-frontend-domain.com
+UPLOAD_DIR=/data/uploads
+```
+
+All variable names correspond to fields in `backend/core/config.py` (`Settings` inherits from `pydantic-settings`, so environment variable names are the uppercased field names).
+
+## Frontend hosting
+
+Build the frontend once and deploy the static output:
+
+```bash
+cd frontend
+npm run build
+# output: frontend/dist/
+```
+
+The `dist/` folder contains plain HTML, JS, and CSS — no server runtime required. Host it on:
+
+- **Vercel or Netlify** — drag-and-drop or connect your Git repository; set `VITE_API_URL` as a build-time environment variable pointing to your backend URL.
+- **Amazon S3 + CloudFront** — upload `dist/` to an S3 bucket configured for static website hosting, then put CloudFront in front for HTTPS and caching.
+- **nginx** — serve the folder directly with a simple `root` directive; configure nginx to forward `/api/` requests to the backend.
+
+## Upload storage
+
+<Warning>
+  In production, `UPLOAD_DIR` must point to persistent storage. The default `./uploads` path inside the container will be lost whenever the container restarts.
+</Warning>
+
+Mount a Docker volume or bind-mount a host directory:
+
+```yaml
+# docker-compose.yml (excerpt)
+volumes:
+  - /data/nexus-uploads:/data/uploads
+```
+
+Then set in `backend/.env`:
+
+```env
+UPLOAD_DIR=/data/uploads
+```
+
+For cloud deployments, consider an S3-compatible object store and update the ingestion service to read from there.
+
+## Multi-user considerations
+
+<Warning>
+  NEXUS has no built-in user authentication. All API endpoints are open by default. Do not expose the backend to the internet without an auth layer.
+</Warning>
+
+For multi-user deployments, add authentication in front of both the API and the frontend before going live. Practical options include:
+
+- **OAuth proxy** (e.g., `oauth2-proxy`) — sits in front of nginx, requires login via GitHub, Google, or another provider.
+- **API gateway** (e.g., Kong, AWS API Gateway) — enforces API keys or JWT tokens per request.
+- **VPN-only access** — restrict the backend to a private network and require VPN for access.
+
+Request throttling and per-user session isolation are also worth adding once auth is in place.

@@ -1,0 +1,177 @@
+---
+title: "Sessions API — manage research sessions"
+description: "REST endpoints for creating, listing, retrieving, deleting sessions, and updating the paper library scoped to each research session."
+---
+
+A session is a named workspace that scopes a subset of uploaded papers for RAG queries, research insights, and paper writing. All chat history, drafted sections, and exports are associated with a session. Sessions are stored in SQLite and referenced by UUID.
+
+<Note>
+The `DELETE /api/sessions/{id}` endpoint is described in the API docstring but is not implemented in the current codebase. To remove a session, delete it directly from the database.
+</Note>
+
+---
+
+## POST /api/sessions
+
+Create a new research session, optionally pre-loading it with a list of paper UUIDs.
+
+**Request body**
+
+```json
+{
+  "title": "My Research Session",
+  "paper_ids": ["550e8400-e29b-41d4-a716-446655440000"]
+}
+```
+
+<ParamField body="title" type="string">
+  Display name for the session. Defaults to `"New Research Session"`.
+</ParamField>
+
+<ParamField body="paper_ids" type="array of strings">
+  UUIDs of papers to include in the session scope. Defaults to an empty list. Papers can be added or removed later via `PUT /api/sessions/{session_id}/papers`.
+</ParamField>
+
+**Response 200**
+
+```json
+{
+  "session_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "title": "My Research Session"
+}
+```
+
+---
+
+## GET /api/sessions
+
+List all sessions ordered by creation date, newest first.
+
+```bash
+curl http://localhost:8000/api/sessions
+```
+
+**Response 200**
+
+```json
+{
+  "sessions": [
+    {
+      "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "title": "My Research Session",
+      "paper_ids": ["550e8400-e29b-41d4-a716-446655440000"],
+      "created_at": "2024-01-15T10:30:00"
+    }
+  ]
+}
+```
+
+---
+
+## GET /api/sessions/{session_id}
+
+Retrieve session details along with the full message history for the session.
+
+**Path parameter**
+
+| Parameter | Description |
+|---|---|
+| `session_id` | UUID of the session |
+
+```bash
+curl http://localhost:8000/api/sessions/7c9e6679-7425-40de-944b-e07fc1f90ae7
+```
+
+**Response 200**
+
+```json
+{
+  "session": {
+    "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "title": "My Research Session",
+    "paper_ids": ["550e8400-e29b-41d4-a716-446655440000"]
+  },
+  "messages": [
+    {
+      "id": "msg-uuid",
+      "role": "user",
+      "content": "What are the key findings?",
+      "sources": [],
+      "confidence": null,
+      "timestamp": "2024-01-15T10:31:00"
+    },
+    {
+      "id": "msg-uuid-2",
+      "role": "assistant",
+      "content": "The key findings include...",
+      "sources": [{"title": "Paper A", "page": 3, "score": 0.92}],
+      "confidence": 87.5,
+      "timestamp": "2024-01-15T10:31:05"
+    }
+  ]
+}
+```
+
+**Message object fields**
+
+<ResponseField name="id" type="string" required>
+  UUID of the message.
+</ResponseField>
+
+<ResponseField name="role" type="string" required>
+  Either `user` or `assistant`.
+</ResponseField>
+
+<ResponseField name="content" type="string" required>
+  Full text content of the message.
+</ResponseField>
+
+<ResponseField name="sources" type="array">
+  Source citations attached to assistant messages. Each entry contains paper metadata and a relevance score. Empty for user messages.
+</ResponseField>
+
+<ResponseField name="confidence" type="number | null">
+  Confidence score (0–100) for the assistant's response. `null` for user messages.
+</ResponseField>
+
+<ResponseField name="timestamp" type="string" required>
+  ISO 8601 datetime when the message was created.
+</ResponseField>
+
+**Response 404** — session not found.
+
+---
+
+## PUT /api/sessions/{session_id}/papers
+
+Replace the paper list for a session. Use this to add or remove papers from the session's scope after creation.
+
+**Path parameter**
+
+| Parameter | Description |
+|---|---|
+| `session_id` | UUID of the session |
+
+**Request body**
+
+```json
+{
+  "paper_ids": ["paper-uuid-1", "paper-uuid-2"]
+}
+```
+
+<ParamField body="paper_ids" type="array of strings" required>
+  Complete replacement list of paper UUIDs. The session's paper list is overwritten with this value, so include all papers you want retained.
+</ParamField>
+
+**Response 200**
+
+```json
+{
+  "paper_ids": ["paper-uuid-1", "paper-uuid-2"]
+}
+```
+
+<Tip>
+  To remove a single paper, fetch the current `paper_ids` from `GET /api/sessions/{session_id}`, remove the unwanted UUID locally, and send the updated list back with this endpoint.
+</Tip>

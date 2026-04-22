@@ -1,0 +1,85 @@
+---
+title: "RAG-powered chat with source citations"
+description: "Ask questions about your research papers and receive streaming answers with inline citations, page references, and a confidence score for each response."
+---
+
+NEXUS Chat uses Retrieval-Augmented Generation (RAG) to ground every answer in your uploaded research papers. Instead of generating from parametric memory alone, NEXUS retrieves the most semantically relevant passages from your paper library, builds a numbered citation context, and streams a response from the language model—with sources and a confidence score appended when generation completes.
+
+## How it works
+
+<Steps>
+  <Step title="Embed the query">
+    Your question is encoded by the BAAI/BGE-M3 model. Unlike chunk embeddings (which are encoded as-is), query strings are prepended with a retrieval instruction (`Represent this sentence for searching relevant passages: {query}`) before encoding. This asymmetric instruction improves recall against the indexed chunk embeddings.
+  </Step>
+  <Step title="Retrieve relevant chunks">
+    NEXUS searches Qdrant for the **top-K most relevant chunks** (default `TOP_K_RETRIEVAL = 8`) using cosine similarity. The search is scoped exclusively to papers in the current session's library—chunks from papers outside the session are filtered out at the query level.
+  </Step>
+  <Step title="Build a grounded context block">
+    Retrieved chunks are assembled into a numbered context block with full attribution metadata for each entry:
+
+    ```text
+    [1] (Paper: "Attention Is All You Need", Vaswani et al., 2017, Page 3, Section: methodology)
+    We propose a new simple network architecture, the Transformer, based solely on attention mechanisms…
+
+    [2] (Paper: "BERT: Pre-training of Deep Bidirectional Transformers", Devlin et al., 2019, Page 1, Section: abstract)
+    …
+    ```
+
+    The system prompt instructs the model to cite sources as `[1]`, `[2]`, etc. and to avoid making claims not found in the retrieved passages.
+  </Step>
+  <Step title="Stream the response">
+    The response is streamed from Ollama over **Server-Sent Events (SSE)** via `POST /api/sessions/{id}/query`. Text arrives incrementally as `chunk` events. NEXUS renders each token as it arrives, showing a blinking cursor while generation is in progress.
+  </Step>
+  <Step title="Show sources and confidence">
+    After the model finishes generating, NEXUS emits two additional SSE events—`sources` and `confidence`—then a `done` event to close the stream. Source pills appear below the response showing the paper title, page number, and retrieval score for each cited chunk.
+  </Step>
+</Steps>
+
+## Session scope
+
+Each chat session has its own paper library. When you create a session, it is initialized with all currently indexed papers, but you can add or remove papers per session at any time. Only papers whose IDs are listed in the session's `paper_ids` array are searched during retrieval—NEXUS never returns chunks from papers outside the active session.
+
+<Tip>
+Create separate sessions for different research topics to keep paper libraries focused. A session on transformer architectures and a session on reinforcement learning will produce more precise retrieval results than a single session containing both paper sets.
+</Tip>
+
+## SSE event types
+
+The streaming endpoint emits four event types over the connection:
+
+| Type | Payload | Description |
+|---|---|---|
+| `chunk` | `{ "type": "chunk", "text": "…" }` | Incremental text token from the LLM |
+| `sources` | `{ "type": "sources", "sources": […] }` | List of retrieved chunks with attribution |
+| `confidence` | `{ "type": "confidence", "score": 87.4 }` | Confidence score (0–100%) |
+| `done` | `{ "type": "done" }` | Stream complete |
+
+Each source object in the `sources` array contains: `label`, `paper_id`, `title`, `authors`, `year`, `page`, `section`, a 300-character `text` preview, and the raw retrieval `score`.
+
+## Confidence score
+
+The confidence score is computed from the average cosine similarity of the **top 3 retrieved chunks**:
+
+```python
+scores = [hit.score for hit in hits]
+confidence = round((sum(scores[:3]) / min(3, len(scores))) * 100, 1)
+```
+
+A score of 100% means the query matched the indexed content with maximum cosine similarity. Scores below ~50% typically indicate that the query topic is underrepresented in the current paper library.
+
+## Suggested prompts
+
+NEXUS includes four built-in quick prompts accessible above the chat input. Click any to pre-fill the query field:
+
+- **Find all research gaps** — surfaces areas the literature has not addressed
+- **Summarize key findings** — distills main results across papers in the session
+- **What are the contradictions?** — identifies conflicting claims between papers
+- **Compare methodologies** — contrasts experimental approaches across works
+
+## Chat history
+
+The last **6 messages** (3 user/assistant turns) from the current conversation are included in context when sending a new query. This allows follow-up questions without repeating context, e.g., "Can you expand on the third point?" will resolve correctly against the prior response.
+
+<Note>
+When no relevant content is found for a query, NEXUS returns a fixed message rather than hallucinating: "No relevant content found in your library for this query. Try uploading more papers or rephrasing your question." No sources or confidence score are emitted in this case.
+</Note>

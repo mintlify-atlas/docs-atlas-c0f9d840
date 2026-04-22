@@ -1,0 +1,90 @@
+---
+title: "AI-assisted paper writing in NEXUS"
+description: "Draft academic paper sections from Abstract to References using NEXUS's AI writing engine, grounded in your research library, then export as DOCX or PDF."
+---
+
+NEXUS includes an AI writing engine that drafts each section of an academic paper using content retrieved directly from your indexed research library. Each section is grounded in relevant passages from your papers, cited inline, and written to the length and academic register expected for that section type. You edit drafts in an in-browser editor, and sections are auto-saved on blur.
+
+## Supported paper sections
+
+NEXUS structures papers into 8 sections in the following order, each with a dedicated icon in the section panel:
+
+| Icon | Section |
+|---|---|
+| ◌ | Abstract |
+| ⬡ | Introduction |
+| ◈ | Related Work |
+| ⬢ | Methodology |
+| ⧖ | Results |
+| ⬟ | Discussion |
+| ◉ | Conclusion |
+| ⊕ | References |
+
+## Section prompts
+
+Each section uses a tailored instruction that defines length, structure, and academic purpose:
+
+- **Abstract** (◌) — 150–250 words covering motivation, approach, key findings, and significance
+- **Introduction** (⬡) — 600–900 words motivating the research problem and ending with a clear statement of contributions
+- **Related Work** (◈) — 700–1,000 words synthesizing prior work thematically, comparing approaches, and identifying the gap this research addresses
+- **Methodology** (⬢) — 800–1,200 words describing a novel research approach informed by literature gaps, with specific techniques, models, and evaluation strategies
+- **Results** (⧖) — 600–900 words covering expected experimental outcomes, evaluation metrics, and comparative analysis
+- **Discussion** (⬟) — 500–800 words interpreting results in the context of the literature, addressing limitations, and suggesting future directions
+- **Conclusion** (◉) — 300–500 words summarizing contributions, key takeaways, and broader impact
+- **References** (⊕) — key cited works from the literature in IEEE/APA format
+
+## Writing workflow
+
+<Steps>
+  <Step title="Open the Write tab">
+    Click **⬢ Write** in the header navigation. The left panel shows all 8 sections with their completion status. Green dots mark sections with more than 10 words of content.
+  </Step>
+  <Step title="Enter your paper title">
+    Type your paper's title in the input field at the top of the section panel. The title is included in every section prompt to help the model maintain consistent framing.
+  </Step>
+  <Step title="Select a section">
+    Click any section in the left panel to open its editor. The editor shows the current content if the section has been started, or an empty state if not.
+  </Step>
+  <Step title="Click ⊕ AI Draft">
+    Click the **⊕ AI Draft** button in the editor header. NEXUS retrieves the **12 most relevant chunks** from your session's paper library using a section-specific search query (e.g., "motivation problem statement research gap importance" for the Introduction), then prompts the LLM to write the section grounded in those passages with inline citations.
+  </Step>
+  <Step title="Edit the generated text">
+    The drafted content appears in the editor as editable text. Revise phrasing, add your own analysis, adjust citations, or restructure as needed. Word count is shown in the editor footer.
+  </Step>
+  <Step title="Auto-save on blur">
+    Clicking outside the editor (blur event) triggers an auto-save to `PUT /api/sessions/{id}/sections/{type}`. The section is marked as done (`is_done: true`) when its word count exceeds 10 words.
+  </Step>
+  <Step title="Repeat for each section">
+    Work through each section in the panel. Later sections automatically receive the content of earlier completed sections (up to 600 characters each) as additional context, helping the model maintain narrative coherence across the full paper.
+  </Step>
+  <Step title="Export when done">
+    Use the export buttons in the section panel footer to download the full paper once you have completed all sections.
+  </Step>
+</Steps>
+
+## Progress tracking
+
+The progress bar below the section list shows how many sections are complete out of 8. A section counts as complete (`is_done`) when its saved word count exceeds 10 words. The display reads **X/8 sections**.
+
+## Export options
+
+<Tabs>
+  <Tab title="DOCX">
+    Click the **DOCX** button in the section panel footer. NEXUS downloads the paper as a Word document via `GET /api/sessions/{id}/export/docx`. The file is named after the session title (spaces replaced with underscores).
+  </Tab>
+  <Tab title="PDF">
+    Click the **PDF** button in the section panel footer. NEXUS downloads the paper as a PDF via `GET /api/sessions/{id}/export/pdf`. The file is named after the session title (spaces replaced with underscores).
+  </Tab>
+</Tabs>
+
+## Section coherence
+
+When drafting any section, NEXUS includes the saved content of all other completed sections in the LLM prompt—up to 600 characters per section. This means that when you draft the Discussion after completing Results and Methodology, the model sees those existing sections and can produce a Discussion that directly references your described approach and outcomes rather than generating in isolation.
+
+<Tip>
+Draft sections in roughly this order: Introduction → Related Work → Methodology → Results → Discussion → Conclusion → Abstract. Writing the Abstract last lets it synthesize the completed paper rather than speculating about content that doesn't exist yet. References can be generated at any point.
+</Tip>
+
+<Note>
+AI-drafted content is a starting point, not a finished manuscript. Review every section carefully, verify that inline citations map to real claims in your source papers, and ensure all factual statements are accurate before submission.
+</Note>

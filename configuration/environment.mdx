@@ -1,0 +1,112 @@
+---
+title: "Environment variables reference for NEXUS"
+description: "Complete reference for all NEXUS environment variables. Configure your LLM endpoint, vector store, database, chunking behavior, and CORS settings."
+---
+
+NEXUS reads its runtime configuration from a `backend/.env` file. The backend uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/), which maps uppercase environment variable names to the lowercase field names defined in `backend/core/config.py`. Every variable listed below has a default that works for local development out of the box.
+
+## Example configuration
+
+```env backend/.env
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2:3b
+QDRANT_URL=http://localhost:6333
+QDRANT_COLLECTION=nexus_papers
+DATABASE_URL=sqlite+aiosqlite:///./nexus.db
+EMBEDDING_MODEL=BAAI/bge-m3
+MAX_CHUNK_SIZE=512
+CHUNK_OVERLAP=64
+TOP_K_RETRIEVAL=8
+UPLOAD_DIR=./uploads
+CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+```
+
+## Variable reference
+
+### LLM
+
+<ParamField path="OLLAMA_URL" type="string" default="http://localhost:11434">
+  Base URL for the Ollama or OpenAI-compatible LLM API. NEXUS appends `/v1` to
+  this value when constructing the OpenAI client endpoint.
+</ParamField>
+
+<ParamField path="OLLAMA_MODEL" type="string" default="llama3.2:3b">
+  Name of the model to use for chat and writing. The model must be available at
+  the configured `OLLAMA_URL`. Used for RAG Q&A, insights generation, and paper
+  section drafting.
+</ParamField>
+
+### Vector store
+
+<ParamField path="QDRANT_URL" type="string" default="http://localhost:6333">
+  URL of the Qdrant vector store. NEXUS connects to this address to create
+  collections, upsert chunk embeddings, and run similarity searches.
+</ParamField>
+
+<ParamField path="QDRANT_COLLECTION" type="string" default="nexus_papers">
+  Qdrant collection name where paper chunks are stored. NEXUS creates this
+  collection automatically on first paper upload if it does not already exist.
+</ParamField>
+
+### Database
+
+<ParamField path="DATABASE_URL" type="string" default="sqlite+aiosqlite:///./nexus.db">
+  SQLAlchemy async database URL. Stores paper metadata, session records, and
+  chat history. Supports any database compatible with SQLAlchemy's async drivers.
+</ParamField>
+
+### Embeddings and chunking
+
+<ParamField path="EMBEDDING_MODEL" type="string" default="BAAI/bge-m3">
+  HuggingFace model used to generate 1024-dimensional embeddings for paper
+  chunks and queries. The model is lazily loaded on first use and then cached in memory for the lifetime of the process.
+</ParamField>
+
+<ParamField path="MAX_CHUNK_SIZE" type="integer" default="512">
+  Maximum token size per text chunk when splitting ingested papers. Smaller
+  values increase retrieval precision; larger values preserve more context per
+  chunk.
+</ParamField>
+
+<ParamField path="CHUNK_OVERLAP" type="integer" default="64">
+  Token overlap between adjacent chunks. Overlap prevents relevant content from
+  being lost at chunk boundaries.
+</ParamField>
+
+<ParamField path="TOP_K_RETRIEVAL" type="integer" default="8">
+  Number of top-scoring chunks returned from Qdrant for each RAG query. Higher
+  values provide more context to the LLM but increase prompt size and latency.
+</ParamField>
+
+### Storage
+
+<ParamField path="UPLOAD_DIR" type="string" default="./uploads">
+  Directory where uploaded PDF and text files are stored on disk. When running
+  via Docker Compose, this path maps to the `uploads` volume.
+</ParamField>
+
+### CORS
+
+<ParamField path="CORS_ORIGINS" type="string" default="http://localhost:5173,http://localhost:3000">
+  Comma-separated list of allowed origins for CORS. Add any additional frontend
+  origins your deployment exposes here.
+</ParamField>
+
+<Note>
+  Variable names are case-insensitive in the `.env` file. pydantic-settings
+  normalizes all names to lowercase internally, so `OLLAMA_URL`,
+  `ollama_url`, and `Ollama_Url` are all equivalent.
+</Note>
+
+<Warning>
+  The default `DATABASE_URL` uses SQLite, which is suitable for single-user
+  development only. For production, replace it with a PostgreSQL connection
+  string:
+
+  ```env
+  DATABASE_URL=postgresql+asyncpg://user:pass@host/dbname
+  ```
+
+  SQLite does not support concurrent writes, which will cause errors under
+  multi-user load.
+</Warning>

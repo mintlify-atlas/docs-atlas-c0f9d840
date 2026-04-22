@@ -1,0 +1,55 @@
+---
+title: "NEXUS REST API overview"
+description: "The NEXUS REST API provides endpoints for paper management, session control, RAG queries, research insights, and paper export. Base URL: http://localhost:8000."
+---
+
+NEXUS exposes a REST API built with FastAPI (v1.0.0). All endpoints are prefixed with `/api`. The API has no authentication by default — add a reverse proxy with auth for production deployments.
+
+## Connection details
+
+| | |
+|---|---|
+| **Base URL** | `http://localhost:8000` |
+| **Interactive docs** | `http://localhost:8000/docs` (Swagger UI) |
+| **Health check** | `GET /health` → `{"status": "ok", "model": "<model name>"}` |
+
+```bash
+curl http://localhost:8000/health
+# {"status": "ok", "model": "llama3.2:3b"}
+```
+
+## Endpoint groups
+
+<CardGroup cols={2}>
+  <Card title="Papers" icon="file-pdf" href="/api/papers">
+    Upload and manage academic PDF and TXT documents. Includes background ingestion, status polling, and deletion with Qdrant vector cleanup.
+  </Card>
+  <Card title="Sessions" icon="folder-open" href="/api/sessions">
+    Create and manage named research workspaces. Each session scopes a subset of papers for RAG queries, insights, and writing.
+  </Card>
+  <Card title="RAG & Insights" icon="magnifying-glass-chart" href="/api/rag-insights">
+    Ask questions with streaming, citation-backed answers via SSE. Generate structured research intelligence reports from session papers.
+  </Card>
+  <Card title="Writing & Export" icon="file-export" href="/api/writing-export">
+    Draft individual paper sections with AI assistance, save edits, and export the full paper as DOCX or PDF.
+  </Card>
+</CardGroup>
+
+## Request and response format
+
+All request bodies are JSON (`Content-Type: application/json`), except file uploads which use `multipart/form-data`. All responses are JSON except export endpoints, which return binary file downloads.
+
+Error responses follow FastAPI's standard format:
+
+```json
+{"detail": "error message"}
+```
+
+## Common HTTP status codes
+
+| Code | Meaning |
+|---|---|
+| `200 OK` | Request succeeded |
+| `400 Bad Request` | Invalid parameters (e.g. unsupported export format, empty session) |
+| `404 Not Found` | Resource does not exist |
+| `422 Unprocessable Entity` | Request body failed schema validation |

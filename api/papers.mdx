@@ -1,0 +1,186 @@
+---
+title: "Papers API — upload and manage documents"
+description: "REST endpoints for uploading PDF and TXT files, listing papers, retrieving paper metadata, and deleting papers with their vector embeddings from Qdrant."
+---
+
+The Papers API handles the full lifecycle of academic documents in NEXUS — from initial upload and background ingestion through metadata retrieval and permanent deletion. Each paper is stored in SQLite and indexed as vector chunks in Qdrant using the `BAAI/bge-m3` embedding model.
+
+---
+
+## POST /api/papers/upload
+
+Upload one or more PDF or TXT files for background ingestion. Each accepted file is saved to disk, registered in the database with status `queued`, and handed off to a background worker that chunks and embeds it into Qdrant.
+
+**Request:** `multipart/form-data`
+
+| Field | Type | Description |
+|---|---|---|
+| `files` | file[] | One or more files. Only `.pdf` and `.txt` extensions are accepted. |
+
+```bash
+curl -X POST http://localhost:8000/api/papers/upload \
+  -F "files=@paper1.pdf" \
+  -F "files=@paper2.pdf"
+```
+
+**Response 200**
+
+```json
+{
+  "uploaded": [
+    {
+      "paper_id": "550e8400-e29b-41d4-a716-446655440000",
+      "filename": "paper1.pdf",
+      "status": "queued"
+    }
+  ]
+}
+```
+
+<Note>
+  Each paper is assigned a UUID and queued for background indexing. Status transitions are: `queued` → `processing` → `indexed` (or `failed`). Poll `GET /api/papers` to track progress.
+</Note>
+
+---
+
+## GET /api/papers
+
+List all ingested papers ordered by creation date, newest first.
+
+```bash
+curl http://localhost:8000/api/papers
+```
+
+**Response 200**
+
+```json
+{
+  "papers": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "title": "Attention Is All You Need",
+      "authors": "Vaswani et al.",
+      "year": 2017,
+      "journal": "NeurIPS",
+      "abstract": "...",
+      "filename": "attention.pdf",
+      "pages": 15,
+      "total_chunks": 42,
+      "status": "indexed",
+      "tags": [],
+      "error_message": null,
+      "created_at": "2024-01-15T10:30:00"
+    }
+  ]
+}
+```
+
+**Paper object fields**
+
+<ResponseField name="id" type="string" required>
+  UUID assigned at upload time.
+</ResponseField>
+
+<ResponseField name="title" type="string" required>
+  Paper title extracted from the PDF or derived from the filename stem.
+</ResponseField>
+
+<ResponseField name="authors" type="string | null">
+  Author list extracted during ingestion.
+</ResponseField>
+
+<ResponseField name="year" type="integer | null">
+  Publication year extracted during ingestion.
+</ResponseField>
+
+<ResponseField name="journal" type="string | null">
+  Journal or conference venue. Not populated by the ingestion pipeline — defaults to an empty string.
+</ResponseField>
+
+<ResponseField name="abstract" type="string | null">
+  Abstract text extracted from the document.
+</ResponseField>
+
+<ResponseField name="filename" type="string" required>
+  Original filename as uploaded.
+</ResponseField>
+
+<ResponseField name="pages" type="integer" required>
+  Total page count of the document.
+</ResponseField>
+
+<ResponseField name="total_chunks" type="integer" required>
+  Number of text chunks indexed into Qdrant.
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+  One of `queued`, `processing`, `indexed`, or `failed`.
+</ResponseField>
+
+<ResponseField name="tags" type="array">
+  Keyword tags associated with the paper.
+</ResponseField>
+
+<ResponseField name="error_message" type="string | null">
+  Human-readable error details when `status` is `failed`. `null` otherwise.
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 datetime of when the paper was uploaded.
+</ResponseField>
+
+---
+
+## GET /api/papers/{paper_id}
+
+Retrieve metadata for a single paper by its UUID.
+
+**Path parameter**
+
+| Parameter | Description |
+|---|---|
+| `paper_id` | UUID of the paper |
+
+```bash
+curl http://localhost:8000/api/papers/550e8400-e29b-41d4-a716-446655440000
+```
+
+**Response 200** — same paper object as described above.
+
+**Response 404**
+
+```json
+{"detail": "Paper not found"}
+```
+
+---
+
+## DELETE /api/papers/{paper_id}
+
+Permanently delete a paper, its uploaded file on disk, and all associated vector chunks from Qdrant.
+
+**Path parameter**
+
+| Parameter | Description |
+|---|---|
+| `paper_id` | UUID of the paper |
+
+```bash
+curl -X DELETE http://localhost:8000/api/papers/550e8400-e29b-41d4-a716-446655440000
+```
+
+**Response 200**
+
+```json
+{"deleted": "550e8400-e29b-41d4-a716-446655440000"}
+```
+
+**Response 404**
+
+```json
+{"detail": "Paper not found"}
+```
+
+<Warning>
+  Deletion is permanent. The uploaded file, the database record, and all Qdrant vector chunks for this paper are removed and cannot be recovered.
+</Warning>
